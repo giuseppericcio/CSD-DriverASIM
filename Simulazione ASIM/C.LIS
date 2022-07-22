@@ -1,0 +1,90 @@
+00000000                                     1  ***********NODO C - TX***********
+00000000                                     2  
+00000000                                     3  *AREA DATI
+00008000                                     4  	ORG	$8000
+00008000  01 02 03 04 05 06 07 08 09 ...     5  MES	DC.B	1,2,3,4,5,6,7,8,9,10,11,12
+0000800C  0C                                 6  DIM	DC.B	12
+0000800D                                     7  CNTC	DS.B	1
+0000800E                                     8  
+0000800E  =00002006                          9  PIADC	EQU	$2006
+0000800E  =00002007                         10  PIACC	EQU	$2007
+0000800E                                    11  
+0000800E                                    12  
+0000800E                                    13  *AREA MAIN
+00008200                                    14  	ORG	$8200
+00008200  4EB9 00008232                     15  MAIN	JSR	INIZIALIZZA
+00008206                                    16  
+00008206  227C 00002007                     17  	MOVEA.L	#PIACC,A1	;indirizzo registro di controllo CRB
+0000820C  247C 00002006                     18  	MOVEA.L	#PIADC,A2	;indirizzo registro PRB
+00008212  207C 00008000                     19  	MOVEA.L	#MES,A0	;indirizzo area messaggio
+00008218                                    20  
+00008218  40C1                              21  	MOVE.W	SR,D1
+0000821A  0241 D8FF                         22  	ANDI.W	#$D8FF,D1	*maschera per le interruzioni. 
+0000821E  46C1                              23  	MOVE.W	D1,SR
+00008220                                    24  
+00008220                                    25  * invio primo carattere:	
+00008220  1212                              26  INVIO1	MOVE.B	(A2),D1		*lettura fittizia da PRB
+00008222  1490                              27  	MOVE.B	(A0),(A2)
+00008224                                    28  
+00008224  13FC 0001 0000800D                29  	MOVE.B	#1,CNTC
+0000822C                                    30  
+0000822C  4EF9 0000822C                     31  LOOP	JMP	LOOP
+00008232                                    32  
+00008232                                    33  *********************************************************************************************************
+00008232                                    34  *INIZIALIZZAZIONE DELLA PIA: PORTO B	
+00008232                                    35  *	CRB |0 |0 |1 0 0 |1 |0 1|
+00008232                                    36  *	                  |	    |      |___Controllo CB1: interruzioni abilitate su IRQB, CB1 sensibile a fronte 1->0
+00008232                                    37  *		      |	    |		
+00008232                                    38  *		      |	    |_______Accesso a DRB: il prossimo accesso ad indirizzo pari è per PRB
+00008232                                    39  *		      |____________Controllo CB2: CRB5=1 significa linea di uscita, con gli altri due bit a 00
+00008232                                    40  *							diventa alto su fronte attivo di CB1 e si riabbassa a 
+00008232                                    41  *							seguito a scrittura su PRB
+00008232                                    42  *
+00008232                                    43  *	DRB=1 => PORTO B PORTO DI USCITA
+00008232                                    44  *
+00008232                                    45  ***********************************************************************************************************
+00008232  11FC 0000 2007                    46  INIZIALIZZA	MOVE.B	#0,PIACC
+00008238  11FC 00FF 2006                    47  		MOVE.B	#$FF,PIADC
+0000823E  11FC 0025 2007                    48  		MOVE.B	#%00100101,PIACC
+00008244  4E75                              49  	RTS
+00008246                                    50  
+00008246                                    51  *interruzione livello 4 mappato a $70
+00008800                                    52  	ORG	$8800
+00008800  2F08                              53  INT4	MOVE.L	A0,-(A7)
+00008802  2F09                              54  	MOVE.L	A1,-(A7)
+00008804  2F00                              55  	MOVE.L	D0,-(A7)
+00008806  2F01                              56  	MOVE.L	D1,-(A7)
+00008808                                    57  
+00008808  4240                              58  	CLR	D0
+0000880A  4241                              59  	CLR	D1
+0000880C  207C 00002006                     60  	MOVEA.L	#PIADC,A0
+00008812  227C 00008000                     61  	MOVEA.L	#MES,A1
+00008818  1039 0000800D                     62  	MOVE.B	CNTC,D0
+0000881E                                    63  	
+0000881E                                    64  	*Lettura fittizia
+0000881E  1210                              65  	MOVE.B	(A0),D1		*Cosi posso riusare D1
+00008820                                    66  	
+00008820                                    67  	
+00008820  1239 0000800C                     68  	MOVE.B	DIM,D1	*Dimensione totale dei byte da inviare
+00008826                                    69  
+00008826  B200                              70  	CMP.B		D0,D1		*un controllo su D1
+00008828  6700 0014                         71  	BEQ		RIPRISTINO
+0000882C                                    72  
+0000882C  D2C0                              73  	ADDA		D0,A1
+0000882E  1091                              74  	MOVE.B	(A1),(A0)
+00008830  5200                              75  	ADD.B		#1,D0
+00008832  B200                              76  	CMP.B		D0,D1
+00008834  6600 0002                         77  	BNE		FUORI
+00008838                                    78  
+00008838  13C0 0000800D                     79  FUORI	MOVE.B	D0,CNTC
+0000883E                                    80  
+0000883E  221F                              81  RIPRISTINO	MOVE.L	(A7)+,D1
+00008840  201F                              82  		MOVE.L	(A7)+,D0
+00008842  225F                              83  		MOVE.L	(A7)+,A1
+00008844  205F                              84  		MOVE.L	(A7)+,A0
+00008846                                    85  
+00008846  4E73                              86  	RTE
+00008848                                    87  	END	MAIN
+
+No errors detected
+No warnings generated

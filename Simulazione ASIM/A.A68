@@ -1,0 +1,317 @@
+**********************************
+*	Il nodo A nella prima fase riceve un messaggio di N caratteri da B e poi un messaggio di N caratteri da C, dopo averli ricevuti, 
+*	A verifica se i messaggi ricevuti da B e C sono uguali invocando una subroutine CHECK.
+*	Al termine della fase1, se i messaggi sono uguali, A riceverà T ulteriori messaggi (T fissato a scelta dello studente), ricevendo 
+*	prima un intero messaggio da B e poi un intero messaggio da C in maniera alternata. Se invece i messaggi ricevuti nella fase 
+*	1 sono diversi, A riceverà T ulteriori messaggi, ricevendo prima un messaggio da C e poi da B, in maniera alternata.
+*	Tale nodoA, dunque presenta due dispositivi PIA, che si comportano da ricevitori.
+*	Una PIA genera una interruzione di livello 3, mentre l'altra di livello 4.
+
+***********************************
+
+*AREA DATI
+	ORG	$8000
+MSGB	DS.B	12	*Appoggio per il messaggio ricevuto dal primo tx
+MSGC	DS.B	12	*appoggio per il messaggio ricevuto dal secondo tx
+CNTB	DC.B	0	*numero di byte ricevuti da B
+CNTC	DC.B	0	*numero di byte ricevuti da C
+FASE1	DC.B	1	*flag che segnala se ci troviamo nella fase 1 (=1) oppure nella fase 2
+N	EQU	4	*numero di caratteri che formano un messaggio
+T	EQU	2	*numero di messaggi ricevuti nella fase 2
+UGUALI	DS.B	1	*Area di memoria per il salvataggio dell'operazione di confronto dei 2 messaggi ricevuti nella fase 1
+TURNOB	DC.B	1	*flag per segnalare che è il turno di B
+TURNOC	DC.B	1	*flag per segnalare che è il turno di C
+SOSPB	DC.B	0		*flag per segnalare che B è sospeso
+SOSPC	DC.B	0		*flag per segnalare che C è sospeso
+
+
+PIADA	EQU	$2004
+PIACA	EQU	$2005
+PIADA2	EQU	$2008
+PIACA2	EQU	$2009
+
+
+*AREA MAIN
+	ORG	$8200
+MAIN	JSR	INIZIALIZZA
+
+	MOVE.W	SR,D1
+	ANDI.W	#$D8FF,D1
+	MOVE.W	D1,SR
+
+
+LOOP	JMP	LOOP
+
+***********************************************************************************************************
+*INIZIALIZZAZIONE DELLA PIA: PORTO A	        	
+*   CRA |0 |0 |1 0 0 |1 |0 1|
+*	          |	        |      |____Controllo CA1: interruzioni abilitate su IRQA, CA1 sensibile a fronte 1->0
+*	          |	        |	
+*	          |	        |________Accesso a DRA: il prossimo accesso ad indirizzo pari è per PRA
+*	          |_____________Controllo CA2: 1=>linea di uscita, con gli altri due bit a 00 diventa alto sul fronte
+*							attivo di CA1 e si riabbassa a seguito di una lettura su PRA
+*							0=>linea di ingresso, si comporta come CA1 (CRA3 come CRA0,
+*							CRA4 come CRA1, IRQA2 come IRQA1)
+*
+*	DRA=0 => PORTO A PORTO DI INGRESSO
+*
+***********************************************************************************************************
+INIZIALIZZA	MOVE.B	#0,PIACA
+	MOVE.B	#0,PIADA
+	MOVE.B	#%00100101,PIACA
+
+	MOVE.B	#0,PIACA2
+	MOVE.B	#0,PIADA2
+	MOVE.B	#%00100101,PIACA2
+	RTS
+
+
+*************************************SOTTOPROGRAMMA CHECK****************************************
+*		STACK
+*		A1		(4 BYTE)
+*		A0		(4 BYTE)
+*		D1		(4 BYTE)
+*		D0		(4 BYTE)
+*		A6		(4 BYTE)   <---A6
+*		IND. RITORNO	(4 BYTE)
+*		UGUALI	(4 BYTE)
+*		N		(2 BYTE)
+*		MSGC		(4 BYTE)
+*		MSGB		(4 BYTE)
+
+
+CHECK	LINK	A6,#-16
+	MOVE.L	D0,-4(A6)
+	MOVE.L	D1,-8(A6)
+	MOVE.L	A0,-12(A6)
+	MOVE.L	A1,-16(A6)
+		
+	MOVE.L	8(A6),A0	*UGUALI
+	MOVE.W	12(A6),D0	*N
+	MOVE.L	14(A6),A2	*MSGC
+	MOVE.L	18(A6),A1	*MSGB
+
+	MOVE.B	(A0),D1
+	
+CONF	MOVE.B	(A1),D2
+	CMP.B		(A2),D2
+	BNE		EXIT		*se i caratteri sono diversi esco dalla funzione
+	ADDA		#1,A1
+	ADDA		#1,A2
+	ADD.B		#1,D3
+	CMP.B		D3,D0
+	BNE		CONF		*ci sono ancora caratteri da confrontare? se si continuo a confrontare
+
+	MOVE.B	#1,D1		*sono arrivato a confrontare tutti i caratteri, quindi i messaggi sono uguali (=1)
+	MOVE.B	D1,(A0)
+
+EXIT	MOVE.L	-4(A6),D0
+	MOVE.L	-8(A6),D1
+	MOVE.L	-12(A6),A0
+	MOVE.L	-16(A6),A1
+	UNLK		A6
+	RTS
+
+
+*******Interrupt livello 3 --> PIA1 da B
+	ORG	$8600
+
+ISRB	MOVEM.L	D0-D7/A0-A6,-(A7)
+	MOVEA.L	#PIADA,A0	*sposto in A0 indirizzo PIADA
+	MOVEA.L	#MSGB,A1	*sposto in A1 indirizzo MSGB
+	MOVE.B	#N,D0		*sposto in D0 il numero di caratteri N
+	MOVE.B	CNTB,D1	*sposto in D1 contatore di caratteri da B
+	CMP.B	#1,FASE1	*sono nella fase 1? se si, proseguo
+	BNE	FASE2B
+
+	CMP.B	#1,TURNOB	*nella fase 1 secondo l'ipotesi STANDARD l'ordine di arrivo dei messaggi è prefissato quindi ricevo prima da B
+	BNE	F1B
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+	ADDI.B	#1,D1	*incremento il contatore di B
+	MOVE.B	D1,CNTB
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	ESCB	*se no, esco
+
+	MOVE.B	#0,CNTB
+	MOVE.B	#0,TURNOB
+
+	JMP	ESCB
+
+F1B	MOVE.B	#1,SOSPB
+	CMP.B	#1,SOSPC
+	BNE	ESCB
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	RISVEGLIAC
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+	JMP	ESCB
+
+FASE2B	CMP.B	#1,UGUALI	*i messaggi ricevuti nella prima fase sono uguali? se si, proseguo
+	BNE	FUNB
+
+	CMP.B	#1,TURNOB	*verifico se è il turno di B
+	BNE	SOSPENDIB
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+	ADDI.B	#1,D1	*incremento il contatore di B
+	MOVE.B	D1,CNTB
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	ESCB	*se no, esco
+
+	MOVE.B	#0,CNTB
+	MOVE.B	#0,TURNOB
+	CMP.B	#1,SOSPC	*per caso nel frattempo C ha interrotto e si è sospeso? se si, servo la sua richiesta
+	BNE	ESCB
+
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	RISVEGLIAC
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+	JMP	ESCB
+
+FUNB	CMP.B	#0,TURNOC	*verifico che non sia il turno di C
+	BNE	SOSPENDIB
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+	ADDI.B	#1,D1	*incremento il contatore di B
+	MOVE.B	D1,CNTB
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	ESCB	*se no, esco
+
+	MOVE.B	#0,CNTB
+	MOVE.B	#1,TURNOC
+	CMP.B	#1,SOSPC	*per caso nel frattempo C ha interrotto e si è sospeso? se si, servo la sua richiesta
+	BNE	ESCB
+
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	RISVEGLIAC
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+	JMP	ESCB
+
+SOSPENDIB	MOVE.B	#1,SOSPB
+
+ESCB	MOVEM.L	(A7)+,D0-D7/A0-A6
+	RTE
+
+
+*******Interrupt livello 4 --> PIA2 da C
+	ORG	$8800
+
+ISRC	MOVEM.L	D0-D7/A0-A6,-(A7)
+	MOVEA.L	#PIADA2,A0	*sposto in A0 indirizzo PIADA2
+	MOVEA.L	#MSGC,A1	*sposto in A1 indirizzo MSGC
+	MOVE.B	#N,D0		*sposto in D0 il numero di caratteri N
+	MOVE.B	CNTC,D1	*sposto in D1 contatore di caratteri da C
+	CMP.B	#1,FASE1	*sono nella fase 1? se si, proseguo
+	BNE	F2C
+
+	CMP.B	#0,TURNOB	*nella fase 1 secondo l'ipotesi STANDARD l'ordine di arrivo dei messaggi è prefissato quindi ricevo da C solo dopo che ho ricevuto da B
+	BNE	SOSC
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+	ADDI.B	#1,D1	*incremento il contatore di C
+	MOVE.B	D1,CNTC
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	ESCC	*se no, esco
+
+	MOVE.B	#0,CNTC
+	MOVE.B	#1,TURNOB
+
+	MOVE.L	#MSGB,-(A7)
+	MOVE.L	#MSGC,-(A7)
+	MOVE.W	#N,-(A7)
+	MOVE.L	#UGUALI,-(A7)
+
+	JSR	CHECK		*chiamo la subroutine per verificare se i 2 messaggi ricevuti sono uguali
+
+	ADDA	#14,A7
+	MOVE.B	#0,FASE1
+
+	CMP.B	#1,UGUALI
+	BNE	ESCC
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	RISB
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+
+	JMP	ESCC
+
+F2C	CMP.B	#1,UGUALI	*i messaggi ricevuti nella prima fase sono uguali? se si, proseguo
+	BNE	FC
+
+	CMP.B	#0,TURNOB	*verifico che non sia il turno di B
+	BNE	SOSC
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+	ADDI.B	#1,D1	*incremento il contatore di C
+	MOVE.B	D1,CNTC
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	ESCC	*se no, esco
+
+	MOVE.B	#0,CNTC
+	MOVE.B	#1,TURNOB
+	CMP.B	#1,SOSPB	*per caso nel frattempo B ha interrotto e si è sospeso? se si, servo la sua richiesta
+	BNE	ESCC
+
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	RISB
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+	JMP	ESCC
+
+FC	CMP.B	#1,TURNOC	*verifico che sia il turno di C
+	BNE	SOSC
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+	ADDI.B	#1,D1	*incremento il contatore di C
+	MOVE.B	D1,CNTC
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	ESCC	*se no, esco
+
+	MOVE.B	#0,CNTC
+	MOVE.B	#0,TURNOC
+	CMP.B	#1,SOSPB	*per caso nel frattempo B ha interrotto e si è sospeso? se si, servo la sua richiesta
+	BNE	ESCC
+
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	RISB
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+	JMP	ESCC
+
+SOSC	MOVE.B	#1,SOSPC
+
+ESCC	MOVEM.L	(A7)+,D0-D7/A0-A6
+	RTE
+
+RISB	MOVE.B	#0,SOSPB	*abbasso il flag di sospeso di B
+	MOVEA.L	#PIADA,A0
+	MOVEA.L	#MSGB,A1
+	MOVE.B	#N,D0
+	MOVE.B	CNTB,D1
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+	ADDI.B	#1,D1	*incremento il contatore di B
+	MOVE.B	D1,CNTB
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	USC	*se no, esco
+
+	MOVE.B	#0,CNTB
+USC	RTS
+
+RISVEGLIAC	MOVE.B	#0,SOSPC	*abbasso il flag di sospeso di C
+	MOVEA.L	#PIADA2,A0
+	MOVEA.L	#MSGC,A1
+	MOVE.B	#N,D0
+	MOVE.B	CNTC,D1
+
+	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+	ADDI.B	#1,D1	*incremento il contatore di C
+	MOVE.B	D1,CNTC
+	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+	BLT	ESCI	*se no, esco
+
+	MOVE.B	#0,CNTC
+ESCI	RTS
+
+	END	MAIN
+
+
+
+

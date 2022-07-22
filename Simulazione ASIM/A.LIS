@@ -1,0 +1,316 @@
+00000000                                     1  **********************************
+00000000                                     2  *	Il nodo A nella prima fase riceve un messaggio di N caratteri da B e poi un messaggio di N caratteri da C, dopo averli ricevuti, 
+00000000                                     3  *	A verifica se i messaggi ricevuti da B e C sono uguali invocando una subroutine CHECK.
+00000000                                     4  *	Al termine della fase1, se i messaggi sono uguali, A riceverà T ulteriori messaggi (T fissato a scelta dello studente), ricevendo 
+00000000                                     5  *	prima un intero messaggio da B e poi un intero messaggio da C in maniera alternata. Se invece i messaggi ricevuti nella fase 
+00000000                                     6  *	1 sono diversi, A riceverà T ulteriori messaggi, ricevendo prima un messaggio da C e poi da B, in maniera alternata.
+00000000                                     7  *	Tale nodoA, dunque presenta due dispositivi PIA, che si comportano da ricevitori.
+00000000                                     8  *	Una PIA genera una interruzione di livello 3, mentre l'altra di livello 4.
+00000000                                     9  
+00000000                                    10  ***********************************
+00000000                                    11  
+00000000                                    12  *AREA DATI
+00008000                                    13  	ORG	$8000
+00008000                                    14  MSGB	DS.B	12	*Appoggio per il messaggio ricevuto dal primo tx
+0000800C                                    15  MSGC	DS.B	12	*appoggio per il messaggio ricevuto dal secondo tx
+00008018  00                                16  CNTB	DC.B	0	*numero di byte ricevuti da B
+00008019  00                                17  CNTC	DC.B	0	*numero di byte ricevuti da C
+0000801A  01                                18  FASE1	DC.B	1	*flag che segnala se ci troviamo nella fase 1 (=1) oppure nella fase 2
+0000801B  =00000004                         19  N	EQU	4	*numero di caratteri che formano un messaggio
+0000801B  =00000002                         20  T	EQU	2	*numero di messaggi ricevuti nella fase 2
+0000801B                                    21  UGUALI	DS.B	1	*Area di memoria per il salvataggio dell'operazione di confronto dei 2 messaggi ricevuti nella fase 1
+0000801C  01                                22  TURNOB	DC.B	1	*flag per segnalare che è il turno di B
+0000801D  01                                23  TURNOC	DC.B	1	*flag per segnalare che è il turno di C
+0000801E  00                                24  SOSPB	DC.B	0		*flag per segnalare che B è sospeso
+0000801F  00                                25  SOSPC	DC.B	0		*flag per segnalare che C è sospeso
+00008020                                    26  
+00008020                                    27  
+00008020  =00002004                         28  PIADA	EQU	$2004
+00008020  =00002005                         29  PIACA	EQU	$2005
+00008020  =00002008                         30  PIADA2	EQU	$2008
+00008020  =00002009                         31  PIACA2	EQU	$2009
+00008020                                    32  
+00008020                                    33  
+00008020                                    34  *AREA MAIN
+00008200                                    35  	ORG	$8200
+00008200  4EB9 00008214                     36  MAIN	JSR	INIZIALIZZA
+00008206                                    37  
+00008206  40C1                              38  	MOVE.W	SR,D1
+00008208  0241 D8FF                         39  	ANDI.W	#$D8FF,D1
+0000820C  46C1                              40  	MOVE.W	D1,SR
+0000820E                                    41  
+0000820E                                    42  
+0000820E  4EF9 0000820E                     43  LOOP	JMP	LOOP
+00008214                                    44  
+00008214                                    45  ***********************************************************************************************************
+00008214                                    46  *INIZIALIZZAZIONE DELLA PIA: PORTO A	        	
+00008214                                    47  *   CRA |0 |0 |1 0 0 |1 |0 1|
+00008214                                    48  *	          |	        |      |____Controllo CA1: interruzioni abilitate su IRQA, CA1 sensibile a fronte 1->0
+00008214                                    49  *	          |	        |	
+00008214                                    50  *	          |	        |________Accesso a DRA: il prossimo accesso ad indirizzo pari è per PRA
+00008214                                    51  *	          |_____________Controllo CA2: 1=>linea di uscita, con gli altri due bit a 00 diventa alto sul fronte
+00008214                                    52  *							attivo di CA1 e si riabbassa a seguito di una lettura su PRA
+00008214                                    53  *							0=>linea di ingresso, si comporta come CA1 (CRA3 come CRA0,
+00008214                                    54  *							CRA4 come CRA1, IRQA2 come IRQA1)
+00008214                                    55  *
+00008214                                    56  *	DRA=0 => PORTO A PORTO DI INGRESSO
+00008214                                    57  *
+00008214                                    58  ***********************************************************************************************************
+00008214  11FC 0000 2005                    59  INIZIALIZZA	MOVE.B	#0,PIACA
+0000821A  11FC 0000 2004                    60  	MOVE.B	#0,PIADA
+00008220  11FC 0025 2005                    61  	MOVE.B	#%00100101,PIACA
+00008226                                    62  
+00008226  11FC 0000 2009                    63  	MOVE.B	#0,PIACA2
+0000822C  11FC 0000 2008                    64  	MOVE.B	#0,PIADA2
+00008232  11FC 0025 2009                    65  	MOVE.B	#%00100101,PIACA2
+00008238  4E75                              66  	RTS
+0000823A                                    67  
+0000823A                                    68  
+0000823A                                    69  *************************************SOTTOPROGRAMMA CHECK****************************************
+0000823A                                    70  *		STACK
+0000823A                                    71  *		A1		(4 BYTE)
+0000823A                                    72  *		A0		(4 BYTE)
+0000823A                                    73  *		D1		(4 BYTE)
+0000823A                                    74  *		D0		(4 BYTE)
+0000823A                                    75  *		A6		(4 BYTE)   <---A6
+0000823A                                    76  *		IND. RITORNO	(4 BYTE)
+0000823A                                    77  *		UGUALI	(4 BYTE)
+0000823A                                    78  *		N		(2 BYTE)
+0000823A                                    79  *		MSGC		(4 BYTE)
+0000823A                                    80  *		MSGB		(4 BYTE)
+0000823A                                    81  
+0000823A                                    82  
+0000823A  4E56 FFF0                         83  CHECK	LINK	A6,#-16
+0000823E  2D40 FFFC                         84  	MOVE.L	D0,-4(A6)
+00008242  2D41 FFF8                         85  	MOVE.L	D1,-8(A6)
+00008246  2D48 FFF4                         86  	MOVE.L	A0,-12(A6)
+0000824A  2D49 FFF0                         87  	MOVE.L	A1,-16(A6)
+0000824E                                    88  		
+0000824E  206E 0008                         89  	MOVE.L	8(A6),A0	*UGUALI
+00008252  302E 000C                         90  	MOVE.W	12(A6),D0	*N
+00008256  246E 000E                         91  	MOVE.L	14(A6),A2	*MSGC
+0000825A  226E 0012                         92  	MOVE.L	18(A6),A1	*MSGB
+0000825E                                    93  
+0000825E  1210                              94  	MOVE.B	(A0),D1
+00008260                                    95  	
+00008260  1411                              96  CONF	MOVE.B	(A1),D2
+00008262  B412                              97  	CMP.B		(A2),D2
+00008264  6600 0016                         98  	BNE		EXIT		*se i caratteri sono diversi esco dalla funzione
+00008268  D2FC 0001                         99  	ADDA		#1,A1
+0000826C  D4FC 0001                        100  	ADDA		#1,A2
+00008270  5203                             101  	ADD.B		#1,D3
+00008272  B003                             102  	CMP.B		D3,D0
+00008274  66EA                             103  	BNE		CONF		*ci sono ancora caratteri da confrontare? se si continuo a confrontare
+00008276                                   104  
+00008276  123C 0001                        105  	MOVE.B	#1,D1		*sono arrivato a confrontare tutti i caratteri, quindi i messaggi sono uguali (=1)
+0000827A  1081                             106  	MOVE.B	D1,(A0)
+0000827C                                   107  
+0000827C  202E FFFC                        108  EXIT	MOVE.L	-4(A6),D0
+00008280  222E FFF8                        109  	MOVE.L	-8(A6),D1
+00008284  206E FFF4                        110  	MOVE.L	-12(A6),A0
+00008288  226E FFF0                        111  	MOVE.L	-16(A6),A1
+0000828C  4E5E                             112  	UNLK		A6
+0000828E  4E75                             113  	RTS
+00008290                                   114  
+00008290                                   115  
+00008290                                   116  *******Interrupt livello 3 --> PIA1 da B
+00008600                                   117  	ORG	$8600
+00008600                                   118  
+00008600  48E7 FFFE                        119  ISRB	MOVEM.L	D0-D7/A0-A6,-(A7)
+00008604  207C 00002004                    120  	MOVEA.L	#PIADA,A0	*sposto in A0 indirizzo PIADA
+0000860A  227C 00008000                    121  	MOVEA.L	#MSGB,A1	*sposto in A1 indirizzo MSGB
+00008610  103C 0004                        122  	MOVE.B	#N,D0		*sposto in D0 il numero di caratteri N
+00008614  1239 00008018                    123  	MOVE.B	CNTB,D1	*sposto in D1 contatore di caratteri da B
+0000861A  0C39 0001 0000801A               124  	CMP.B	#1,FASE1	*sono nella fase 1? se si, proseguo
+00008622  6600 005E                        125  	BNE	FASE2B
+00008626                                   126  
+00008626  0C39 0001 0000801C               127  	CMP.B	#1,TURNOB	*nella fase 1 secondo l'ipotesi STANDARD l'ordine di arrivo dei messaggi è prefissato quindi ricevo prima da B
+0000862E  6600 002A                        128  	BNE	F1B
+00008632                                   129  
+00008632  1390 1000                        130  	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+00008636  5201                             131  	ADDI.B	#1,D1	*incremento il contatore di B
+00008638  13C1 00008018                    132  	MOVE.B	D1,CNTB
+0000863E  B200                             133  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+00008640  6D00 00F0                        134  	BLT	ESCB	*se no, esco
+00008644                                   135  
+00008644  13FC 0000 00008018               136  	MOVE.B	#0,CNTB
+0000864C  13FC 0000 0000801C               137  	MOVE.B	#0,TURNOB
+00008654                                   138  
+00008654  4EF9 00008732                    139  	JMP	ESCB
+0000865A                                   140  
+0000865A  13FC 0001 0000801E               141  F1B	MOVE.B	#1,SOSPB
+00008662  0C39 0001 0000801F               142  	CMP.B	#1,SOSPC
+0000866A  6600 00C6                        143  	BNE	ESCB
+0000866E  48E7 FFFE                        144  	MOVEM.L	D0-D7/A0-A6,-(A7)
+00008672  4EB9 0000898C                    145  	JSR	RISVEGLIAC
+00008678  4CDF 7FFF                        146  	MOVEM.L	(A7)+,D0-D7/A0-A6
+0000867C  4EF9 00008732                    147  	JMP	ESCB
+00008682                                   148  
+00008682  0C39 0001 0000801B               149  FASE2B	CMP.B	#1,UGUALI	*i messaggi ricevuti nella prima fase sono uguali? se si, proseguo
+0000868A  6600 0050                        150  	BNE	FUNB
+0000868E                                   151  
+0000868E  0C39 0001 0000801C               152  	CMP.B	#1,TURNOB	*verifico se è il turno di B
+00008696  6600 0092                        153  	BNE	SOSPENDIB
+0000869A                                   154  
+0000869A  1390 1000                        155  	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+0000869E  5201                             156  	ADDI.B	#1,D1	*incremento il contatore di B
+000086A0  13C1 00008018                    157  	MOVE.B	D1,CNTB
+000086A6  B200                             158  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+000086A8  6D00 0088                        159  	BLT	ESCB	*se no, esco
+000086AC                                   160  
+000086AC  13FC 0000 00008018               161  	MOVE.B	#0,CNTB
+000086B4  13FC 0000 0000801C               162  	MOVE.B	#0,TURNOB
+000086BC  0C39 0001 0000801F               163  	CMP.B	#1,SOSPC	*per caso nel frattempo C ha interrotto e si è sospeso? se si, servo la sua richiesta
+000086C4  6600 006C                        164  	BNE	ESCB
+000086C8                                   165  
+000086C8  48E7 FFFE                        166  	MOVEM.L	D0-D7/A0-A6,-(A7)
+000086CC  4EB9 0000898C                    167  	JSR	RISVEGLIAC
+000086D2  4CDF 7FFF                        168  	MOVEM.L	(A7)+,D0-D7/A0-A6
+000086D6  4EF9 00008732                    169  	JMP	ESCB
+000086DC                                   170  
+000086DC  0C39 0000 0000801D               171  FUNB	CMP.B	#0,TURNOC	*verifico che non sia il turno di C
+000086E4  6600 0044                        172  	BNE	SOSPENDIB
+000086E8                                   173  
+000086E8  1390 1000                        174  	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+000086EC  5201                             175  	ADDI.B	#1,D1	*incremento il contatore di B
+000086EE  13C1 00008018                    176  	MOVE.B	D1,CNTB
+000086F4  B200                             177  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+000086F6  6D00 003A                        178  	BLT	ESCB	*se no, esco
+000086FA                                   179  
+000086FA  13FC 0000 00008018               180  	MOVE.B	#0,CNTB
+00008702  13FC 0001 0000801D               181  	MOVE.B	#1,TURNOC
+0000870A  0C39 0001 0000801F               182  	CMP.B	#1,SOSPC	*per caso nel frattempo C ha interrotto e si è sospeso? se si, servo la sua richiesta
+00008712  6600 001E                        183  	BNE	ESCB
+00008716                                   184  
+00008716  48E7 FFFE                        185  	MOVEM.L	D0-D7/A0-A6,-(A7)
+0000871A  4EB9 0000898C                    186  	JSR	RISVEGLIAC
+00008720  4CDF 7FFF                        187  	MOVEM.L	(A7)+,D0-D7/A0-A6
+00008724  4EF9 00008732                    188  	JMP	ESCB
+0000872A                                   189  
+0000872A  13FC 0001 0000801E               190  SOSPENDIB	MOVE.B	#1,SOSPB
+00008732                                   191  
+00008732  4CDF 7FFF                        192  ESCB	MOVEM.L	(A7)+,D0-D7/A0-A6
+00008736  4E73                             193  	RTE
+00008738                                   194  
+00008738                                   195  
+00008738                                   196  *******Interrupt livello 4 --> PIA2 da C
+00008800                                   197  	ORG	$8800
+00008800                                   198  
+00008800  48E7 FFFE                        199  ISRC	MOVEM.L	D0-D7/A0-A6,-(A7)
+00008804  207C 00002008                    200  	MOVEA.L	#PIADA2,A0	*sposto in A0 indirizzo PIADA2
+0000880A  227C 0000800C                    201  	MOVEA.L	#MSGC,A1	*sposto in A1 indirizzo MSGC
+00008810  103C 0004                        202  	MOVE.B	#N,D0		*sposto in D0 il numero di caratteri N
+00008814  1239 00008019                    203  	MOVE.B	CNTC,D1	*sposto in D1 contatore di caratteri da C
+0000881A  0C39 0001 0000801A               204  	CMP.B	#1,FASE1	*sono nella fase 1? se si, proseguo
+00008822  6600 0078                        205  	BNE	F2C
+00008826                                   206  
+00008826  0C39 0000 0000801C               207  	CMP.B	#0,TURNOB	*nella fase 1 secondo l'ipotesi STANDARD l'ordine di arrivo dei messaggi è prefissato quindi ricevo da C solo dopo che ho ricevuto da B
+0000882E  6600 0114                        208  	BNE	SOSC
+00008832                                   209  
+00008832  1390 1000                        210  	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+00008836  5201                             211  	ADDI.B	#1,D1	*incremento il contatore di C
+00008838  13C1 00008019                    212  	MOVE.B	D1,CNTC
+0000883E  B200                             213  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+00008840  6D00 010A                        214  	BLT	ESCC	*se no, esco
+00008844                                   215  
+00008844  13FC 0000 00008019               216  	MOVE.B	#0,CNTC
+0000884C  13FC 0001 0000801C               217  	MOVE.B	#1,TURNOB
+00008854                                   218  
+00008854  2F3C 00008000                    219  	MOVE.L	#MSGB,-(A7)
+0000885A  2F3C 0000800C                    220  	MOVE.L	#MSGC,-(A7)
+00008860  3F3C 0004                        221  	MOVE.W	#N,-(A7)
+00008864  2F3C 0000801B                    222  	MOVE.L	#UGUALI,-(A7)
+0000886A                                   223  
+0000886A  4EB9 0000823A                    224  	JSR	CHECK		*chiamo la subroutine per verificare se i 2 messaggi ricevuti sono uguali
+00008870                                   225  
+00008870  DEFC 000E                        226  	ADDA	#14,A7
+00008874  13FC 0000 0000801A               227  	MOVE.B	#0,FASE1
+0000887C                                   228  
+0000887C  0C39 0001 0000801B               229  	CMP.B	#1,UGUALI
+00008884  6600 00C6                        230  	BNE	ESCC
+00008888  48E7 FFFE                        231  	MOVEM.L	D0-D7/A0-A6,-(A7)
+0000888C  4EB9 00008952                    232  	JSR	RISB
+00008892  4CDF 7FFF                        233  	MOVEM.L	(A7)+,D0-D7/A0-A6
+00008896                                   234  
+00008896  4EF9 0000894C                    235  	JMP	ESCC
+0000889C                                   236  
+0000889C  0C39 0001 0000801B               237  F2C	CMP.B	#1,UGUALI	*i messaggi ricevuti nella prima fase sono uguali? se si, proseguo
+000088A4  6600 0050                        238  	BNE	FC
+000088A8                                   239  
+000088A8  0C39 0000 0000801C               240  	CMP.B	#0,TURNOB	*verifico che non sia il turno di B
+000088B0  6600 0092                        241  	BNE	SOSC
+000088B4                                   242  
+000088B4  1390 1000                        243  	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+000088B8  5201                             244  	ADDI.B	#1,D1	*incremento il contatore di C
+000088BA  13C1 00008019                    245  	MOVE.B	D1,CNTC
+000088C0  B200                             246  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+000088C2  6D00 0088                        247  	BLT	ESCC	*se no, esco
+000088C6                                   248  
+000088C6  13FC 0000 00008019               249  	MOVE.B	#0,CNTC
+000088CE  13FC 0001 0000801C               250  	MOVE.B	#1,TURNOB
+000088D6  0C39 0001 0000801E               251  	CMP.B	#1,SOSPB	*per caso nel frattempo B ha interrotto e si è sospeso? se si, servo la sua richiesta
+000088DE  6600 006C                        252  	BNE	ESCC
+000088E2                                   253  
+000088E2  48E7 FFFE                        254  	MOVEM.L	D0-D7/A0-A6,-(A7)
+000088E6  4EB9 00008952                    255  	JSR	RISB
+000088EC  4CDF 7FFF                        256  	MOVEM.L	(A7)+,D0-D7/A0-A6
+000088F0  4EF9 0000894C                    257  	JMP	ESCC
+000088F6                                   258  
+000088F6  0C39 0001 0000801D               259  FC	CMP.B	#1,TURNOC	*verifico che sia il turno di C
+000088FE  6600 0044                        260  	BNE	SOSC
+00008902                                   261  
+00008902  1390 1000                        262  	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+00008906  5201                             263  	ADDI.B	#1,D1	*incremento il contatore di C
+00008908  13C1 00008019                    264  	MOVE.B	D1,CNTC
+0000890E  B200                             265  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+00008910  6D00 003A                        266  	BLT	ESCC	*se no, esco
+00008914                                   267  
+00008914  13FC 0000 00008019               268  	MOVE.B	#0,CNTC
+0000891C  13FC 0000 0000801D               269  	MOVE.B	#0,TURNOC
+00008924  0C39 0001 0000801E               270  	CMP.B	#1,SOSPB	*per caso nel frattempo B ha interrotto e si è sospeso? se si, servo la sua richiesta
+0000892C  6600 001E                        271  	BNE	ESCC
+00008930                                   272  
+00008930  48E7 FFFE                        273  	MOVEM.L	D0-D7/A0-A6,-(A7)
+00008934  4EB9 00008952                    274  	JSR	RISB
+0000893A  4CDF 7FFF                        275  	MOVEM.L	(A7)+,D0-D7/A0-A6
+0000893E  4EF9 0000894C                    276  	JMP	ESCC
+00008944                                   277  
+00008944  13FC 0001 0000801F               278  SOSC	MOVE.B	#1,SOSPC
+0000894C                                   279  
+0000894C  4CDF 7FFF                        280  ESCC	MOVEM.L	(A7)+,D0-D7/A0-A6
+00008950  4E73                             281  	RTE
+00008952                                   282  
+00008952  13FC 0000 0000801E               283  RISB	MOVE.B	#0,SOSPB	*abbasso il flag di sospeso di B
+0000895A  207C 00002004                    284  	MOVEA.L	#PIADA,A0
+00008960  227C 00008000                    285  	MOVEA.L	#MSGB,A1
+00008966  103C 0004                        286  	MOVE.B	#N,D0
+0000896A  1239 00008018                    287  	MOVE.B	CNTB,D1
+00008970                                   288  
+00008970  1390 1000                        289  	MOVE.B	(A0),(A1,D1)	*leggo carattere da B
+00008974  5201                             290  	ADDI.B	#1,D1	*incremento il contatore di B
+00008976  13C1 00008018                    291  	MOVE.B	D1,CNTB
+0000897C  B200                             292  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+0000897E  6D00 000A                        293  	BLT	USC	*se no, esco
+00008982                                   294  
+00008982  13FC 0000 00008018               295  	MOVE.B	#0,CNTB
+0000898A  4E75                             296  USC	RTS
+0000898C                                   297  
+0000898C  13FC 0000 0000801F               298  RISVEGLIAC	MOVE.B	#0,SOSPC	*abbasso il flag di sospeso di C
+00008994  207C 00002008                    299  	MOVEA.L	#PIADA2,A0
+0000899A  227C 0000800C                    300  	MOVEA.L	#MSGC,A1
+000089A0  103C 0004                        301  	MOVE.B	#N,D0
+000089A4  1239 00008019                    302  	MOVE.B	CNTC,D1
+000089AA                                   303  
+000089AA  1390 1000                        304  	MOVE.B	(A0),(A1,D1)	*leggo carattere da C
+000089AE  5201                             305  	ADDI.B	#1,D1	*incremento il contatore di C
+000089B0  13C1 00008019                    306  	MOVE.B	D1,CNTC
+000089B6  B200                             307  	CMP.B	D0,D1	*verifico se ho ricevuto N caratteri
+000089B8  6D00 000A                        308  	BLT	ESCI	*se no, esco
+000089BC                                   309  
+000089BC  13FC 0000 00008019               310  	MOVE.B	#0,CNTC
+000089C4  4E75                             311  ESCI	RTS
+000089C6                                   312  
+000089C6                                   313  	END	MAIN
+
+No errors detected
+No warnings generated

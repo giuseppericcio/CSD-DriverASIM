@@ -1,0 +1,90 @@
+***********NODO C - TX***********
+
+*AREA DATI
+	ORG	$8000
+MES	DC.B	1,2,3,4,5,6,7,8,9,10,11,12
+DIM	DC.B	12
+CNTC	DS.B	1
+
+PIADC	EQU	$2006
+PIACC	EQU	$2007
+
+
+*AREA MAIN
+	ORG	$8200
+MAIN	JSR	INIZIALIZZA
+
+	MOVEA.L	#PIACC,A1	;indirizzo registro di controllo CRB
+	MOVEA.L	#PIADC,A2	;indirizzo registro PRB
+	MOVEA.L	#MES,A0	;indirizzo area messaggio
+
+	MOVE.W	SR,D1
+	ANDI.W	#$D8FF,D1	*maschera per le interruzioni. 
+	MOVE.W	D1,SR
+
+* invio primo carattere:	
+INVIO1	MOVE.B	(A2),D1		*lettura fittizia da PRB
+	MOVE.B	(A0),(A2)
+
+	MOVE.B	#1,CNTC
+
+LOOP	JMP	LOOP
+
+*********************************************************************************************************
+*INIZIALIZZAZIONE DELLA PIA: PORTO B	
+*	CRB |0 |0 |1 0 0 |1 |0 1|
+*	                  |	    |      |___Controllo CB1: interruzioni abilitate su IRQB, CB1 sensibile a fronte 1->0
+*		      |	    |		
+*		      |	    |_______Accesso a DRB: il prossimo accesso ad indirizzo pari è per PRB
+*		      |____________Controllo CB2: CRB5=1 significa linea di uscita, con gli altri due bit a 00
+*							diventa alto su fronte attivo di CB1 e si riabbassa a 
+*							seguito a scrittura su PRB
+*
+*	DRB=1 => PORTO B PORTO DI USCITA
+*
+***********************************************************************************************************
+INIZIALIZZA	MOVE.B	#0,PIACC
+		MOVE.B	#$FF,PIADC
+		MOVE.B	#%00100101,PIACC
+	RTS
+
+*interruzione livello 4 mappato a $70
+	ORG	$8800
+INT4	MOVE.L	A0,-(A7)
+	MOVE.L	A1,-(A7)
+	MOVE.L	D0,-(A7)
+	MOVE.L	D1,-(A7)
+
+	CLR	D0
+	CLR	D1
+	MOVEA.L	#PIADC,A0
+	MOVEA.L	#MES,A1
+	MOVE.B	CNTC,D0
+	
+	*Lettura fittizia
+	MOVE.B	(A0),D1		*Cosi posso riusare D1
+	
+	
+	MOVE.B	DIM,D1	*Dimensione totale dei byte da inviare
+
+	CMP.B		D0,D1		*un controllo su D1
+	BEQ		RIPRISTINO
+
+	ADDA		D0,A1
+	MOVE.B	(A1),(A0)
+	ADD.B		#1,D0
+	CMP.B		D0,D1
+	BNE		FUORI
+
+FUORI	MOVE.B	D0,CNTC
+
+RIPRISTINO	MOVE.L	(A7)+,D1
+		MOVE.L	(A7)+,D0
+		MOVE.L	(A7)+,A1
+		MOVE.L	(A7)+,A0
+
+	RTE
+	END	MAIN
+
+
+
